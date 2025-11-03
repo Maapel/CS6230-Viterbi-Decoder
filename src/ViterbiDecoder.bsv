@@ -49,36 +49,8 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
     Reg#(Bool) initialized <- mkReg(False);
     FIFO#(Tuple2#(Vector#(1024, StateIndex), LogProb)) resultFifo <- mkFIFO;
 
-    method Action start(Bit#(32) n, Bit#(32) m);
-        nStates <= n;
-        mObservations <= m;
-        currentTime <= 0;
-        initialized <= False;
-
-        // Configure sub-modules
-        bmu.configure(n, m);
-        smu.configure(n);
-    endmethod
-
-    method Action loadTransitionProb(Bit#(32) addr, LogProb data);
-        bmu.loadTransitionProb(addr, data);
-    endmethod
-
-    method Action loadEmissionProb(Bit#(32) addr, LogProb data);
-        bmu.loadEmissionProb(addr, data);
-    endmethod
-
     // Input FIFO for observations
     FIFO#(Observation) obsFifo <- mkFIFO;
-
-    method Action processObservation(Observation obs);
-        obsFifo.enq(obs);
-    endmethod
-
-    method ActionValue#(Tuple2#(Vector#(1024, StateIndex), LogProb)) getResult();
-        resultFifo.deq();
-        return resultFifo.first();
-    endmethod
 
     // Rule: Process observations through FSM
     rule processObs (fsmState == Idle && obsFifo.notEmpty());
@@ -234,6 +206,35 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
         currentTime <= 0;
         fsmState <= Idle;
     endrule
+
+    // Methods (must be at end of module)
+    method Action start(Bit#(32) n, Bit#(32) m);
+        nStates <= n;
+        mObservations <= m;
+        currentTime <= 0;
+        initialized <= False;
+
+        // Configure sub-modules
+        bmu.configure(n, m);
+        smu.configure(n);
+    endmethod
+
+    method Action loadTransitionProb(Bit#(32) addr, LogProb data);
+        bmu.loadTransitionProb(addr, data);
+    endmethod
+
+    method Action loadEmissionProb(Bit#(32) addr, LogProb data);
+        bmu.loadEmissionProb(addr, data);
+    endmethod
+
+    method Action processObservation(Observation obs);
+        obsFifo.enq(obs);
+    endmethod
+
+    method ActionValue#(Tuple2#(Vector#(1024, StateIndex), LogProb)) getResult();
+        resultFifo.deq();
+        return resultFifo.first();
+    endmethod
 
 endmodule
 
