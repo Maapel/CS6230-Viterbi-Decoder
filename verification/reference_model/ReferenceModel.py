@@ -1,21 +1,24 @@
 # ReferenceModel.py
 import struct
-import math
+import numpy as np
 
 # Helper to convert a 32-bit hex string to an IEEE 754 float
 def hex_to_float(hex_str):
     try:
         int_val = int(hex_str, 16)
-        return struct.unpack('f', struct.pack('I', int_val))[0]
+        # Use numpy.float32 for bit-exact precision matching with hardware
+        return np.float32(struct.unpack('f', struct.pack('I', int_val))[0])
     except Exception as e:
         print(f"Error converting hex: {hex_str} - {e}")
-        return 0.0
+        return np.float32(0.0)
 
 # Helper to write output values in the required format
 def write_output_val(f, val, is_float=False):
     if is_float:
-        # Convert float back to 32-bit hex integer representation
-        hex_val = struct.unpack('I', struct.pack('f', val))[0]
+        # Convert numpy.float32 back to 32-bit hex integer representation
+        # Ensure we maintain float32 precision throughout
+        float32_val = np.float32(val)
+        hex_val = struct.unpack('I', struct.pack('f', float32_val))[0]
         f.write(f"{hex_val:08X}\n")
     else:
         # Write integer value
@@ -23,15 +26,15 @@ def write_output_val(f, val, is_float=False):
 
 def run_viterbi(n, m, a_matrix, b_matrix, obs_sequence):
     """
-    Runs the Viterbi algorithm using log-probabilities.
+    Runs the Viterbi algorithm using log-probabilities with numpy.float32 precision.
     Formula: V_t(j) = max_i(V_{t-1}(i) + a_ij) + b_j(o_t)
     """
     T = len(obs_sequence)
     if T == 0:
-        return [], -math.inf
+        return [], np.float32(-np.inf)
 
-    # Viterbi probability table: V[t][j]
-    V = [[-math.inf for _ in range(n)] for _ in range(T)]
+    # Viterbi probability table: V[t][j] - use numpy.float32 for precision
+    V = [[np.float32(-np.inf) for _ in range(n)] for _ in range(T)]
     # Backtrace path pointer table: B[t][j]
     B = [[0 for _ in range(n)] for _ in range(T)]
 
@@ -50,7 +53,7 @@ def run_viterbi(n, m, a_matrix, b_matrix, obs_sequence):
     for t in range(1, T):
         obs_idx = obs_sequence[t] - 1
         for j in range(n): # For current state j
-            max_prob = -math.inf
+            max_prob = np.float32(-np.inf)
             max_state = 0
             for i in range(n): # From previous state i
                 # V_{t-1}(i) + a_ij
@@ -65,7 +68,7 @@ def run_viterbi(n, m, a_matrix, b_matrix, obs_sequence):
             B[t][j] = max_state
 
     # --- 3. Termination ---
-    final_prob = -math.inf
+    final_prob = np.float32(-np.inf)
     final_state = 0
     for j in range(n):
         if V[T-1][j] > final_prob:
@@ -84,15 +87,15 @@ def run_viterbi(n, m, a_matrix, b_matrix, obs_sequence):
 
 def main():
     # --- Load N.dat ---
-    with open("../CAD_for_VLSI_Project_spec/test-cases/small/N_small.dat", 'r') as f:
+    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/N_small.dat", 'r') as f:
         N = int(f.readline().strip()) # N=2
         M = int(f.readline().strip()) # M=4
     print(f"Loaded N={N}, M={M}")
 
     # --- Load A.dat ---
     # (N+1) x N matrix
-    A = [[0.0 for _ in range(N)] for _ in range(N + 1)]
-    with open("../CAD_for_VLSI_Project_spec/test-cases/small/A_small.dat", 'r') as f:
+    A = [[np.float32(0.0) for _ in range(N)] for _ in range(N + 1)]
+    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/A_small.dat", 'r') as f:
         lines = f.readlines()
         idx = 0
         for i in range(N + 1):
@@ -103,8 +106,8 @@ def main():
 
     # --- Load B.dat ---
     # N x M matrix
-    B = [[0.0 for _ in range(M)] for _ in range(N)]
-    with open("../CAD_for_VLSI_Project_spec/test-cases/small/B_small.dat", 'r') as f:
+    B = [[np.float32(0.0) for _ in range(M)] for _ in range(N)]
+    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/B_small.dat", 'r') as f:
         lines = f.readlines()
         idx = 0
         for i in range(N):
@@ -113,7 +116,7 @@ def main():
                 idx += 1
 
     # --- Process Input.dat and Write Output.dat ---
-    with open("../CAD_for_VLSI_Project_spec/test-cases/small/input_small.dat", 'r') as f_in, open("Ref_Output.dat", 'w') as f_out:
+    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/input_small.dat", 'r') as f_in, open("Ref_Output.dat", 'w') as f_out:
         current_sequence = []
         while True:
             line = f_in.readline()
