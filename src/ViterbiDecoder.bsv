@@ -11,6 +11,18 @@ import Vector::*;
 import RegFile::*;
 import FIFO::*;
 
+// FSM States
+typedef enum {
+    Idle,
+    Init_LoadMatrices,
+    Init_Process,
+    Process_LoadMatrices,
+    Process_Compute,
+    Process_GetResult,
+    Traceback,
+    Output_Result
+} ViterbiState deriving (Bits, Eq);
+
 // Viterbi Decoder Module
 module mkViterbiDecoder(ViterbiDecoderIfc);
     // Sub-modules
@@ -25,6 +37,13 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
     Reg#(Bit#(32)) nStates <- mkReg(0);
     Reg#(Bit#(32)) mObservations <- mkReg(0);
     Reg#(Bit#(32)) currentTime <- mkReg(0);
+
+    // FSM state
+    Reg#(ViterbiState) fsmState <- mkReg(Idle);
+
+    // Loop counters for FSM
+    Reg#(Bit#(6)) jCounter <- mkReg(0);  // For state loops (0-31)
+    Reg#(Bit#(6)) iCounter <- mkReg(0);  // For predecessor loops (0-31)
 
     // Processing state
     Reg#(Bool) initialized <- mkReg(False);
@@ -49,17 +68,11 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
         bmu.loadEmissionProb(addr, data);
     endmethod
 
+    // Input FIFO for observations
+    FIFO#(Observation) obsFifo <- mkFIFO;
+
     method Action processObservation(Observation obs);
-        if (obs == 32'hFFFFFFFF) begin
-            // End of sequence - perform traceback
-            performTraceback();
-        end else if (obs == 32'h00000000) begin
-            // Final marker - output final result
-            outputFinalResult();
-        end else begin
-            // Process observation
-            processSingleObservation(obs);
-        end
+        obsFifo.enq(obs);
     endmethod
 
     method ActionValue#(Tuple2#(Vector#(1024, StateIndex), LogProb)) getResult();
@@ -67,81 +80,129 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
         return resultFifo.first();
     endmethod
 
-    // Helper method to process a single observation
-    method Action processSingleObservation(Observation obs);
-        // Set observation in BMU
-        bmu.setObservation(obs);
+    // Rule: Process observations through FSM
+    rule processObs (fsmState == Idle && obsFifo.notEmpty());
+        let obs = obsFifo.first();
+        obsFifo.deq();
 
-        if (!initialized) begin
-            // Initialization step (t=0)
-            performInitialization(obs);
-            initialized <= True;
+        if (obs == 32'hFFFFFFFF) begin
+            // End of sequence - start traceback
+            fsmState <= Traceback;
+        end else if (obs == 32'h00000000) begin
+            // Final marker - output result
+            fsmState <= Output_Result;
         end else begin
-            // Iterative step (t > 0)
-            performIteration();
-        end
-
-        // Advance time
-        currentTime <= currentTime + 1;
-        smu.advanceTime();
-    endmethod
-
-    // Initialization for t=0
-    method Action performInitialization(Observation obs);
-        for (Integer j = 0; j < 32; j = j + 1) begin
-            if (fromInteger(j) < nStates) begin
-                // Compute branch metric for start -> state j
-                bmu.computeBranchMetric(32'hFFFFFFFF, fromInteger(j)); // Special marker for start state
-                let branchMetric <- bmu.getBranchMetric();
-
-                // For initialization, path metric is just the branch metric
-                // Store result
-                Bit#(32) addr = 0 * nStates + fromInteger(j); // time 0, state j
-                pathMetrics.upd(addr, branchMetric);
-
-                // Store predecessor (start state)
-                smu.storePredecessor(fromInteger(j), 32'hFFFFFFFF); // Special marker for start
+            // Process observation
+            bmu.setObservation(obs);
+            if (!initialized) begin
+                fsmState <= Init_LoadMatrices;
+                initialized <= True;
+            end else begin
+                fsmState <= Process_LoadMatrices;
             end
         end
-    endmethod
+    endrule
 
-    // Iterative step for t > 0
-    method Action performIteration();
-        for (Integer j = 0; j < 32; j = j + 1) begin
-            if (fromInteger(j) < nStates) begin
-                // Clear ACSU for this state
-                // Feed all candidates to ACSU
-                for (Integer i = 0; i < 32; i = i + 1) begin
-                    if (fromInteger(i) < nStates) begin
-                        // Get previous path metric V[t-1][i]
-                        Bit#(32) prevAddr = (currentTime - 1) * nStates + fromInteger(i);
-                        LogProb prevPathMetric = pathMetrics.sub(prevAddr);
+    // Rule: Initialize path metrics for t=0
+    rule initPathMetrics (fsmState == Init_LoadMatrices);
+        Bit#(32) j = extend(jCounter);
 
-                        // Compute branch metric A[i][j] + B[j][obs]
-                        bmu.computeBranchMetric(fromInteger(i), fromInteger(j));
-                        let branchMetric <- bmu.getBranchMetric();
+        if (j < nStates) begin
+            // Compute branch metric for start -> state j
+            bmu.computeBranchMetric(32'hFFFFFFFF, j); // Special marker for start state
+            let branchMetric <- bmu.getBranchMetric();
 
-                        // Feed to ACSU
-                        acsu.putCandidate(prevPathMetric, branchMetric, fromInteger(i));
-                    end
-                end
+            // Store result
+            Bit#(32) addr = 0 * nStates + j; // time 0, state j
+            pathMetrics.upd(addr, branchMetric);
 
-                // Get ACSU result
-                let result <- acsu.getResult();
-                match {.newPathMetric, .predecessor} = result;
-
-                // Store new path metric
-                Bit#(32) addr = currentTime * nStates + fromInteger(j);
-                pathMetrics.upd(addr, newPathMetric);
-
-                // Store predecessor in SMU
-                smu.storePredecessor(fromInteger(j), predecessor);
-            end
+            // Store predecessor (start state)
+            smu.storePredecessor(j, 32'hFFFFFFFF); // Special marker for start
         end
-    endmethod
 
-    // Perform traceback at end of sequence
-    method Action performTraceback();
+        // Move to next state or finish
+        if (jCounter == 31) begin
+            jCounter <= 0;
+            currentTime <= 1;
+            smu.advanceTime();
+            fsmState <= Idle;
+        end else begin
+            jCounter <= jCounter + 1;
+        end
+    endrule
+
+    // Rule: Load matrices for iterative processing
+    rule processLoadMatrices (fsmState == Process_LoadMatrices);
+        fsmState <= Process_Compute;
+        iCounter <= 0;
+        jCounter <= 0;
+    endrule
+
+    // Rule: Compute one (i,j) combination per cycle
+    rule processCompute (fsmState == Process_Compute);
+        Bit#(32) j = extend(jCounter);
+        Bit#(32) i = extend(iCounter);
+
+        if (j < nStates && i < nStates) begin
+            // Get previous path metric V[t-1][i]
+            Bit#(32) prevAddr = (currentTime - 1) * nStates + i;
+            LogProb prevPathMetric = pathMetrics.sub(prevAddr);
+
+            // Compute branch metric A[i][j] + B[j][obs]
+            bmu.computeBranchMetric(i, j);
+            let branchMetric <- bmu.getBranchMetric();
+
+            // Feed to ACSU
+            acsu.putCandidate(prevPathMetric, branchMetric, i);
+        end
+
+        // Update counters
+        if (iCounter == extend(nStates) - 1) begin
+            // Finished all predecessors for this state
+            iCounter <= 0;
+
+            if (jCounter == extend(nStates) - 1) begin
+                // Finished all states
+                jCounter <= 0;
+                fsmState <= Process_GetResult;
+            end else begin
+                jCounter <= jCounter + 1;
+            end
+        end else begin
+            iCounter <= iCounter + 1;
+        end
+    endrule
+
+    // Rule: Get ACSU results and store path metrics
+    rule processGetResult (fsmState == Process_GetResult);
+        Bit#(32) j = extend(jCounter);
+
+        if (j < nStates) begin
+            // Get ACSU result
+            let result <- acsu.getResult();
+            match {.newPathMetric, .predecessor} = result;
+
+            // Store new path metric
+            Bit#(32) addr = currentTime * nStates + j;
+            pathMetrics.upd(addr, newPathMetric);
+
+            // Store predecessor in SMU
+            smu.storePredecessor(j, predecessor);
+        end
+
+        // Move to next state or finish
+        if (jCounter == extend(nStates) - 1) begin
+            jCounter <= 0;
+            currentTime <= currentTime + 1;
+            smu.advanceTime();
+            fsmState <= Idle;
+        end else begin
+            jCounter <= jCounter + 1;
+        end
+    endrule
+
+    // Rule: Perform traceback
+    rule doTraceback (fsmState == Traceback);
         // Find state with best final path metric
         LogProb bestMetric = 32'h7FFFFFFF; // Large positive (least likely)
         StateIndex bestState = 0;
@@ -162,14 +223,17 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
 
         // Store result
         resultFifo.enq(tuple2(path, bestMetric));
-    endmethod
 
-    // Output final result
-    method Action outputFinalResult();
-        // This would output the final marker, but for now just prepare for next sequence
+        fsmState <= Idle;
+    endrule
+
+    // Rule: Output final result
+    rule doOutputResult (fsmState == Output_Result);
+        // Reset for next sequence
         initialized <= False;
         currentTime <= 0;
-    endmethod
+        fsmState <= Idle;
+    endrule
 
 endmodule
 

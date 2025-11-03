@@ -5,8 +5,11 @@
 # Bluespec Compiler
 BSC = bsc
 
+# Bluespec library path
+export BSC_LIB_DIR = /opt/bsc-inst/lib
+
 # Bluespec flags for simulation
-BSC_SIM_FLAGS = -sim -bdir build -simdir build -p src:src/lib:src/test +
+BSC_SIM_FLAGS = -sim -bdir build -simdir build -p src:src/lib:src/test
 
 # Simulation executable
 SIM_EXE = build/a.out
