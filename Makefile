@@ -9,7 +9,7 @@ BSC = bsc
 export BSC_LIB_DIR = /opt/bsc-inst/lib
 
 # Bluespec flags for simulation
-BSC_SIM_FLAGS = -sim -bdir build -simdir build -p src:src/lib:src/test
+BSC_SIM_FLAGS = -sim -bdir build -simdir build -p /opt/bsc-inst/lib/Libraries:src:src/lib:src/test
 
 # Simulation executable
 SIM_EXE = build/a.out
@@ -26,6 +26,11 @@ all: $(SIM_EXE)
 # Build simulation executable
 $(SIM_EXE): build $(BSV_SOURCES) $(VERILOG_SOURCES)
 	@echo "=== Building BSV Sources ==="
+	$(BSC) $(BSC_SIM_FLAGS) src/ViterbiTypes.bsv
+	$(BSC) $(BSC_SIM_FLAGS) src/lib/FPAdder.bsv
+	$(BSC) $(BSC_SIM_FLAGS) src/Bmu.bsv
+	$(BSC) $(BSC_SIM_FLAGS) src/Acsu.bsv
+	$(BSC) $(BSC_SIM_FLAGS) src/Smu.bsv
 	$(BSC) $(BSC_SIM_FLAGS) -g mkViterbiDecoder src/ViterbiDecoder.bsv
 	$(BSC) $(BSC_SIM_FLAGS) -g mkTb src/test/Tb.bsv
 	@echo "=== Compiling Verilog Sources ==="

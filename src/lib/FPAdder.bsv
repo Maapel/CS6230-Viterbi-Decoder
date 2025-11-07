@@ -58,7 +58,8 @@ function Bit#(32) fpAdd(Bit#(32) a, Bit#(32) b);
     Bit#(28) man_smaller_shifted = man_smaller_ext >> exp_diff;
 
     // Add the aligned mantissas
-    Bit#(28) man_sum = addMantissas(man_larger_ext, man_smaller_shifted);
+    // This now returns a 29-bit value to include a potential carry-out
+    Bit#(29) man_sum = addMantissas(man_larger_ext, man_smaller_shifted);
 
     // Normalize the result
     Bit#(32) result = normalizeMantissa(man_sum, exp_larger, sign_result);
@@ -67,7 +68,8 @@ function Bit#(32) fpAdd(Bit#(32) a, Bit#(32) b);
 endfunction
 
 // Function to add two 28-bit mantissas using bitwise operations
-function Bit#(28) addMantissas(Bit#(28) a, Bit#(28) b);
+// Returns a 29-bit result to capture the carry-out bit
+function Bit#(29) addMantissas(Bit#(28) a, Bit#(28) b);
     Bit#(29) sum = 0;  // Extra bit for carry
     Bit#(1) carry = 0;
 
@@ -83,23 +85,50 @@ function Bit#(28) addMantissas(Bit#(28) a, Bit#(28) b);
         carry = carry_out;
     end
 
-    // Handle final carry (would cause exponent increment)
-    if (carry == 1) begin
-        sum = sum << 1;  // Shift left and increment exponent (handled in normalize)
+    // Store the final carry bit in the MSB
+    sum[28] = carry;
+
+    return sum;
+endfunction
+
+// Function to add two 29-bit mantissas using bitwise operations
+// Returns a 30-bit result to capture the carry-out bit
+function Bit#(30) addMantissas29(Bit#(29) a, Bit#(29) b);
+    Bit#(30) sum = 0;  // Extra bit for carry
+    Bit#(1) carry = 0;
+
+    for (Integer i = 0; i < 29; i = i + 1) begin
+        Bit#(1) bitA = a[i];
+        Bit#(1) bitB = b[i];
+
+        // Full adder: sum = a ^ b ^ carry, cout = (a & b) | (b & carry) | (a & carry)
+        Bit#(1) sum_bit = bitA ^ bitB ^ carry;
+        Bit#(1) carry_out = (bitA & bitB) | (bitB & carry) | (bitA & carry);
+
+        sum[i] = sum_bit;
+        carry = carry_out;
     end
 
-    return sum[27:0];
+    // Store the final carry bit in the MSB
+    sum[29] = carry;
+
+    return sum;
 endfunction
 
 // Function to normalize the mantissa and pack into IEEE 754 format
-function Bit#(32) normalizeMantissa(Bit#(28) man_sum, Bit#(8) exp, Bit#(1) sign);
+function Bit#(32) normalizeMantissa(Bit#(29) man_sum, Bit#(8) exp, Bit#(1) sign);
     // Find leading 1 position (simplified - assumes no denormals)
     Integer leading_zeros = 0;
     Bit#(24) man_normalized;
     Bit#(8) exp_normalized = exp;
 
-    // Check if we need to shift left (for very small results)
-    if (man_sum[27] == 0) begin
+    // Check for overflow from addition (man_sum[28])
+    if (man_sum[28] == 1) begin
+        // Overflow, shift right
+        man_normalized = man_sum[27:4]; // Take bits 27:4
+        exp_normalized = exp + 1;
+    end
+    else if (man_sum[27] == 0) begin
         // Find first 1 bit
         Bool found = False;
         for (Integer i = 26; i >= 0; i = i - 1) begin
@@ -113,11 +142,8 @@ function Bit#(32) normalizeMantissa(Bit#(28) man_sum, Bit#(8) exp, Bit#(1) sign)
         man_normalized = man_sum[23:0] << leading_zeros;
         exp_normalized = exp - fromInteger(leading_zeros);
     end else begin
-        // Already normalized or needs right shift
-        man_normalized = man_sum[26:3];  // Take bits 26:3, truncate for rounding
-        if (man_sum[27] == 1) begin
-            exp_normalized = exp + 1;  // Overflow, increment exponent
-        end
+        // Already normalized
+        man_normalized = man_sum[26:3];  // Take bits 26:3
     end
 
     // Round to nearest even (simplified)
@@ -127,13 +153,19 @@ function Bit#(32) normalizeMantissa(Bit#(28) man_sum, Bit#(8) exp, Bit#(1) sign)
 
     if (round == 1 && (guard == 1 || sticky == 1 || man_normalized[0] == 1)) begin
         // Round up
-        Bit#(24) rounded_man = addMantissas({man_normalized, 4'b0}, 28'd1)[27:4];
-        man_normalized = rounded_man[23:0];
+        // Add 1 to the 24-bit mantissa (by adding to the 29-bit extended value)
+        Bit#(29) mantissa_ext = {1'b0, man_normalized, 4'b0000};
+        Bit#(30) rounded_result_full = addMantissas29(mantissa_ext, 29'd1);
+        Bit#(29) rounded_result = rounded_result_full[28:0];
 
         // Handle overflow from rounding
-        if (rounded_man[24] == 1) begin
-            man_normalized = man_normalized >> 1;
+        if (rounded_result[28] == 1) begin // This is the 'index 24' error fix
+            // e.g., 0b1.11...1 rounded up to 0b10.0...0
+            // If we round up and overflow, the new mantissa should be 0, and we increment the exponent.
+            man_normalized = 24'h000000; // All zeros
             exp_normalized = exp_normalized + 1;
+        end else begin
+            man_normalized = rounded_result[27:4]; // No overflow
         end
     end
 

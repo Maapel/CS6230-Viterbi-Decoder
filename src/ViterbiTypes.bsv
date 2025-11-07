@@ -3,6 +3,8 @@
 
 package ViterbiTypes;
 
+import Vector::*;
+
 // Basic types
 typedef Bit#(32) LogProb;        // IEEE 754 single-precision floating-point for log-probabilities
 typedef Bit#(32) StateIndex;     // State indices (assuming N <= 32 for this implementation)

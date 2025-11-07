@@ -1,3 +1,1 @@
 mkdir -p Build Sim
-Compiling BSV files...
-bsc -sim -bdir Build -simdir Sim -p + -g mkViterbiDecoder ViterbiDecoder.bsv

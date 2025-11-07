@@ -1,0 +1,66 @@
+# Build artifacts
+build/
+*.bo
+*.ba
+*.o
+*.so
+mk*.ba
+mk*.bo
+a.out
+
+# Simulation outputs
+sim.log
+diff.log
+*.log
+
+# Verification outputs
+verification/reference_model/Ref_Output.dat
+build/Output.dat
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+.~lock*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Reports and synthesis outputs
+reports/
+*.rpt
+*.timing
+*.area
+*.power
+
+# Backup files
+*.bak
+*.backup
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Documentation artifacts
+*.aux
+*.log
+*.pdf
+*.dvi
+*.out
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Test outputs
+test_results/
+output/
