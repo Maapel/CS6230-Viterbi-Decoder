@@ -47,8 +47,11 @@ interface SmuIfc;
     // Advance to next time step
     method Action advanceTime();
 
-    // Get the complete path for traceback
-    method ActionValue#(Vector#(1024, StateIndex)) getSurvivorPath(StateIndex finalState, Bit#(32) pathLength);
+    // Non-blocking traceback interface
+    // 1. Starts the traceback FSM in the SMU
+    method Action startTraceback(StateIndex finalState, Bit#(32) pathLength);
+    // 2. Reads the result from the SMU's output FIFO
+    method ActionValue#(Vector#(1024, StateIndex)) getPathResult();
 endinterface
 
 // Interface for the top-level Viterbi Decoder

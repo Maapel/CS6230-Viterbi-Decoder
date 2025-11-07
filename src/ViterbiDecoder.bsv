@@ -23,6 +23,7 @@ typedef enum {
     Iter_GetBMU_PutACSU,    // State for main loop, getting BMU result and feeding ACSU
     Iter_GetACSU_Store,     // State for main loop, getting ACSU result for state j
     Traceback_FindBest_Loop,// State for traceback, finding best final state
+    Traceback_StartSMU,     // NEW: Tells SMU to start tracing
     Traceback_GetPath_Enq   // State for traceback, getting path from SMU and enqueuing result
 } FSMState deriving (Bits, Eq, FShow);
 
@@ -183,21 +184,27 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
             r_j_counter <= j + 1;
         end else begin
             // Finished loop, we have r_bestState and r_bestMetric
-            fsmState <= Traceback_GetPath_Enq; // Go to next state
+            fsmState <= Traceback_StartSMU; // NEW: Go to SMU start state
         end
     endrule
 
+    // NEW RULE: This rule tells the SMU to start its FSM
+    rule do_traceback_start_smu (fsmState == Traceback_StartSMU);
+        smu.startTraceback(r_bestState, currentTime - 1);
+        fsmState <= Traceback_GetPath_Enq; // Now we can wait for the result
+    endrule
+
     rule do_traceback_get_path_and_enq (fsmState == Traceback_GetPath_Enq);
-        // This rule calls the (non-synthesizable) Smu method
-        let path <- smu.getSurvivorPath(r_bestState, currentTime - 1);
-        
+        // This rule now calls the non-blocking getPathResult
+        let path <- smu.getPathResult();
+
         // Enqueue the real result
         resultFifo.enq(tuple2(path, r_bestMetric));
-        
-        
+
+
         // Enqueue the end-of-sequence marker
-        resultFifo.enq(tuple2(replicate(0), 32'hFFFFFFFF)); 
-        
+        resultFifo.enq(tuple2(replicate(0), 32'hFFFFFFFF));
+
         r_j_counter <= 0; // Reset counter
         fsmState <= Idle; // Back to idle
     endrule

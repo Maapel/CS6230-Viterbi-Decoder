@@ -12,9 +12,8 @@ import FIFO::*;
 
 // FSM states for traceback
 typedef enum {
-    Idle,           // Waiting for getSurvivorPath() call
-    TracingBack,    // Performing traceback one step per cycle
-    Done            // Path complete
+    Idle,           // Waiting for startTraceback() call
+    TracingBack     // Performing traceback one step per cycle
 } SmuState deriving (Bits, Eq);
 
 // Survivor Memory Unit Module
@@ -79,7 +78,8 @@ module mkSmu(SmuIfc);
         currentTime <= currentTime + 1;
     endmethod
 
-    method ActionValue#(Vector#(1024, StateIndex)) getSurvivorPath(StateIndex finalState, Bit#(32) pathLength);
+    // Non-blocking traceback interface
+    method Action startTraceback(StateIndex finalState, Bit#(32) pathLength);
         // Start the FSM for traceback
         smuState <= TracingBack;
         tracebackCounter <= 0;
@@ -91,8 +91,10 @@ module mkSmu(SmuIfc);
         Bit#(32) lastIdx = pathLength - 1;
         initPath[lastIdx] = finalState + 1; // Convert to 1-indexed
         tracebackPath <= initPath;
+    endmethod
 
-        // The actual result will be enqueued by the FSM rules
+    method ActionValue#(Vector#(1024, StateIndex)) getPathResult();
+        // The actual result is enqueued by the FSM rule
         resultFifo.deq();
         return resultFifo.first();
     endmethod
