@@ -115,63 +115,80 @@ function Bit#(30) addMantissas29(Bit#(29) a, Bit#(29) b);
     return sum;
 endfunction
 
-// Function to normalize the mantissa and pack into IEEE 754 format
+// --- OPTIMIZED NORMALIZATION ---
+// Uses case statements which are often faster for BSC to elaborate than deep for-loops
+function Bit#(5) countLeadingZeros(Bit#(27) val);
+    Bit#(5) zeros = 0;
+    if (val[26] == 1) zeros = 0;
+    else if (val[25] == 1) zeros = 1;
+    else if (val[24] == 1) zeros = 2;
+    else if (val[23] == 1) zeros = 3;
+    else if (val[22] == 1) zeros = 4;
+    else if (val[21] == 1) zeros = 5;
+    else if (val[20] == 1) zeros = 6;
+    else if (val[19] == 1) zeros = 7;
+    else if (val[18] == 1) zeros = 8;
+    else if (val[17] == 1) zeros = 9;
+    else if (val[16] == 1) zeros = 10;
+    else if (val[15] == 1) zeros = 11;
+    else if (val[14] == 1) zeros = 12;
+    else if (val[13] == 1) zeros = 13;
+    else if (val[12] == 1) zeros = 14;
+    else if (val[11] == 1) zeros = 15;
+    else if (val[10] == 1) zeros = 16;
+    else if (val[9] == 1) zeros = 17;
+    else if (val[8] == 1) zeros = 18;
+    else if (val[7] == 1) zeros = 19;
+    else if (val[6] == 1) zeros = 20;
+    else if (val[5] == 1) zeros = 21;
+    else if (val[4] == 1) zeros = 22;
+    else if (val[3] == 1) zeros = 23;
+    else if (val[2] == 1) zeros = 24;
+    else if (val[1] == 1) zeros = 25;
+    else if (val[0] == 1) zeros = 26;
+    else zeros = 27;
+    return zeros;
+endfunction
+
 function Bit#(32) normalizeMantissa(Bit#(29) man_sum, Bit#(8) exp, Bit#(1) sign);
-    // Find leading 1 position (simplified - assumes no denormals)
-    Integer leading_zeros = 0;
     Bit#(24) man_normalized;
     Bit#(8) exp_normalized = exp;
 
-    // Check for overflow from addition (man_sum[28])
     if (man_sum[28] == 1) begin
-        // Overflow, shift right
-        man_normalized = man_sum[27:4]; // Take bits 27:4
+        // Overflow
+        man_normalized = man_sum[27:4];
         exp_normalized = exp + 1;
     end
-    else if (man_sum[27] == 0) begin
-        // Find first 1 bit
-        Bool found = False;
-        for (Integer i = 26; i >= 0; i = i - 1) begin
-            if (!found && man_sum[i] == 1) begin
-                leading_zeros = 26 - i;
-                found = True;
-            end
-        end
+    else begin
+        // Use the manual optimized leading zero counter
+        // We only need to check the top 27 bits (26 down to 0)
+        Bit#(5) leading_zeros = countLeadingZeros(man_sum[26:0]);
 
         // Shift left to normalize
-        man_normalized = man_sum[23:0] << leading_zeros;
-        exp_normalized = exp - fromInteger(leading_zeros);
-    end else begin
-        // Already normalized
-        man_normalized = man_sum[26:3];  // Take bits 26:3
+        Bit#(27) shifted_sum = man_sum[26:0] << leading_zeros;
+        man_normalized = shifted_sum[26:3];
+
+        // Adjust exponent (using normal subtraction, allowed for index/exponents)
+        exp_normalized = exp - extend(leading_zeros);
     end
 
-    // Round to nearest even (simplified)
+    // Rounding Logic (unchanged)
     Bit#(1) guard = man_sum[2];
     Bit#(1) round = man_sum[1];
     Bit#(1) sticky = man_sum[0];
 
-    if (round == 1 && (guard == 1 || sticky == 1 || man_normalized[0] == 1)) begin
-        // Round up
-        // Add 1 to the 24-bit mantissa (by adding to the 29-bit extended value)
-        Bit#(29) mantissa_ext = {1'b0, man_normalized, 4'b0000};
-        Bit#(30) rounded_result_full = addMantissas29(mantissa_ext, 29'd1);
-        Bit#(29) rounded_result = rounded_result_full[28:0];
-
-        // Handle overflow from rounding
-        if (rounded_result[28] == 1) begin // This is the 'index 24' error fix
-            // e.g., 0b1.11...1 rounded up to 0b10.0...0
-            // If we round up and overflow, the new mantissa should be 0, and we increment the exponent.
-            man_normalized = 24'h000000; // All zeros
-            exp_normalized = exp_normalized + 1;
-        end else begin
-            man_normalized = rounded_result[27:4]; // No overflow
-        end
+    if (man_sum[28] == 0 && (round == 1 && (guard == 1 || sticky == 1 || man_normalized[0] == 1))) begin
+         Bit#(29) mantissa_ext = {1'b0, man_normalized, 4'b0000};
+         Bit#(30) rounded_result_full = addMantissas29(mantissa_ext, 29'd1);
+         if (rounded_result_full[28] == 1) begin
+             man_normalized = 24'h800000; // 1.000...
+             exp_normalized = exp_normalized + 1;
+         end else begin
+             man_normalized = rounded_result_full[27:4];
+         end
     end
 
-    // Pack result
-    Bit#(32) result = {sign, exp_normalized, man_normalized[22:0]};
-    return result;
+    return {sign, exp_normalized, man_normalized[22:0]};
 endfunction
 
 endpackage

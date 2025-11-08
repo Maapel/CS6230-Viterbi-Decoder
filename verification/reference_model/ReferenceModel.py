@@ -87,7 +87,7 @@ def run_viterbi(n, m, a_matrix, b_matrix, obs_sequence):
 
 def main():
     # --- Load N.dat ---
-    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/N_small.dat", 'r') as f:
+    with open("CAD_for_VLSI_Project_spec/test-cases/small/N_small.dat", 'r') as f:
         N = int(f.readline().strip()) # N=2
         M = int(f.readline().strip()) # M=4
     print(f"Loaded N={N}, M={M}")
@@ -95,7 +95,7 @@ def main():
     # --- Load A.dat ---
     # (N+1) x N matrix
     A = [[np.float32(0.0) for _ in range(N)] for _ in range(N + 1)]
-    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/A_small.dat", 'r') as f:
+    with open("CAD_for_VLSI_Project_spec/test-cases/small/A_small.dat", 'r') as f:
         lines = f.readlines()
         idx = 0
         for i in range(N + 1):
@@ -107,7 +107,7 @@ def main():
     # --- Load B.dat ---
     # N x M matrix
     B = [[np.float32(0.0) for _ in range(M)] for _ in range(N)]
-    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/B_small.dat", 'r') as f:
+    with open("CAD_for_VLSI_Project_spec/test-cases/small/B_small.dat", 'r') as f:
         lines = f.readlines()
         idx = 0
         for i in range(N):
@@ -116,7 +116,7 @@ def main():
                 idx += 1
 
     # --- Process Input.dat and Write Output.dat ---
-    with open("../../CAD_for_VLSI_Project_spec/test-cases/small/input_small.dat", 'r') as f_in, open("Ref_Output.dat", 'w') as f_out:
+    with open("CAD_for_VLSI_Project_spec/test-cases/small/input_small.dat", 'r') as f_in, open("verification/reference_model/Ref_Output.dat", 'w') as f_out:
         current_sequence = []
         while True:
             line = f_in.readline()

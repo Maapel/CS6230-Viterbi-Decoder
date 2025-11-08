@@ -201,10 +201,6 @@ module mkViterbiDecoder(ViterbiDecoderIfc);
         // Enqueue the real result
         resultFifo.enq(tuple2(path, r_bestMetric));
 
-
-        // Enqueue the end-of-sequence marker
-        resultFifo.enq(tuple2(replicate(0), 32'hFFFFFFFF));
-
         r_j_counter <= 0; // Reset counter
         fsmState <= Idle; // Back to idle
     endrule

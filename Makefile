@@ -9,7 +9,11 @@ BSC = bsc
 export BSC_LIB_DIR = /opt/bsc-inst/lib
 
 # Bluespec flags for simulation
-BSC_SIM_FLAGS = -sim -bdir build -simdir build -p /opt/bsc-inst/lib/Libraries:src:src/lib:src/test
+# ADDED: +RTS -K256M -RTS to increase stack size for complex elaboration
+BSC_SIM_FLAGS = -sim -bdir build -simdir build -p /opt/bsc-inst/lib/Libraries:/opt/bsc-inst/lib:src:src/lib:src/test +RTS -K256M -RTS
+
+# Bluespec flags for Verilog generation
+BSC_VERILOG_FLAGS = -verilog -bdir build -vdir build -p /opt/bsc-inst/lib/Libraries:/opt/bsc-inst/lib:src:src/lib:src/test +RTS -K256M -RTS
 
 # Simulation executable
 SIM_EXE = build/a.out
@@ -19,7 +23,7 @@ BSV_SOURCES = src/ViterbiTypes.bsv src/Bmu.bsv src/Acsu.bsv src/Smu.bsv src/Vite
 VERILOG_SOURCES = src/lib/FloatingPointAdder.v
 
 # --- Main Targets ---
-.PHONY: all clean test help
+.PHONY: all clean test help verilog
 
 all: $(SIM_EXE)
 
@@ -40,6 +44,15 @@ $(SIM_EXE): build $(BSV_SOURCES) $(VERILOG_SOURCES)
 
 build:
 	mkdir -p build
+
+# Generate Verilog for synthesis (proves synthesizability)
+verilog: build $(BSV_SOURCES) $(VERILOG_SOURCES)
+	@echo "=== Generating Verilog for Synthesis ==="
+	@echo "This will compile all BSV modules to Verilog..."
+	$(BSC) $(BSC_VERILOG_FLAGS) -g mkViterbiDecoder src/ViterbiDecoder.bsv
+	@echo "=== Verilog Generation Complete ==="
+	@echo "Check build/ directory for .v files"
+	@ls -la build/*.v 2>/dev/null || echo "No .v files found"
 
 # Run simulation
 run_sim: $(SIM_EXE)
@@ -99,6 +112,7 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  all        - Build the simulation executable"
+	@echo "  verilog    - Generate Verilog for synthesis (recommended)"
 	@echo "  run_sim    - Run the hardware simulation"
 	@echo "  run_ref    - Run the Python reference model"
 	@echo "  test       - Run complete test suite (small dataset)"
